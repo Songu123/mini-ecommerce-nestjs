@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Get,
   Post,
@@ -9,13 +9,21 @@ import {
   Query,
   ParseIntPipe,
   UseGuards,
+  UseInterceptors,
+  UploadedFiles,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import { Role } from '@prisma/client';
 import { ProductsService } from './products.service.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
@@ -51,7 +59,7 @@ export class ProductsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Lấy chi tiết sản phẩm theo ID (Công khai)' })
+  @ApiOperation({ summary: 'Lấy chi tiết sản phẩm theo ID kèm Album ảnh & Đánh giá (Công khai)' })
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.productsService.findOne(id);
   }
@@ -72,8 +80,94 @@ export class ProductsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xoá sản phẩm theo ID (Chỉ dành cho ADMIN)' })
+  @ApiOperation({ summary: 'Xóa sản phẩm theo ID (Chỉ dành cho ADMIN)' })
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.productsService.remove(id);
+  }
+
+  @Post(':id/upload-images')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Tải lên nhiều hình ảnh cho Album sản phẩm (Chỉ ADMIN, tối đa 5 file/lần, 5MB/file, JPG/PNG/WEBP)',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'string',
+            format: 'binary',
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Tải lên danh sách hình ảnh thành công' })
+  @ApiResponse({ status: 400, description: 'File không hợp lệ hoặc quá dung lượng' })
+  @UseInterceptors(
+    FilesInterceptor('files', 5, {
+      storage: diskStorage({
+        destination: './uploads/products',
+        filename: (req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname).toLowerCase();
+          cb(null, `product-${req.params.id}-${uniqueSuffix}${ext}`);
+        },
+      }),
+      limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit
+      },
+      fileFilter: (req, file, cb) => {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        if (!allowedTypes.includes(file.mimetype)) {
+          return cb(
+            new BadRequestException('Định dạng file không hỗ trợ. Chỉ chấp nhận JPG, PNG hoặc WEBP'),
+            false,
+          );
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  uploadProductImages(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('Vui lòng chọn ít nhất 1 file hình ảnh để tải lên');
+    }
+    const filenames = files.map((f) => f.filename);
+    return this.productsService.addProductImages(id, filenames);
+  }
+
+  @Patch(':id/images/:imageId/primary')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Chọn 1 ảnh làm ảnh đại diện chính của sản phẩm (Chỉ ADMIN)' })
+  @ApiResponse({ status: 200, description: 'Đặt ảnh chính thành công' })
+  setPrimaryImage(
+    @Param('id', ParseIntPipe) productId: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+  ) {
+    return this.productsService.setPrimaryImage(productId, imageId);
+  }
+
+  @Delete(':id/images/:imageId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xóa 1 hình ảnh khỏi Album của sản phẩm (Chỉ ADMIN)' })
+  @ApiResponse({ status: 200, description: 'Xóa ảnh thành công' })
+  deleteProductImage(
+    @Param('id', ParseIntPipe) productId: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+  ) {
+    return this.productsService.deleteProductImage(productId, imageId);
   }
 }

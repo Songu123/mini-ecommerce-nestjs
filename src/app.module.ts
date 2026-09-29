@@ -3,6 +3,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
@@ -28,6 +30,10 @@ import { ReviewsModule } from './reviews/reviews.module.js';
         limit: 60,
       },
     ]),
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads'),
+      serveRoot: '/uploads',
+    }),
     PrismaModule,
     RedisModule,
     AuthModule,
