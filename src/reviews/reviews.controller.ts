@@ -30,7 +30,8 @@ export class ReviewsController {
   @ApiResponse({ status: 201, description: 'Gửi đánh giá thành công' })
   @ApiResponse({ status: 400, description: 'Chưa từng mua sản phẩm hoặc đơn hàng chưa giao thành công' })
   async createReview(@CurrentUser() user: any, @Body() dto: CreateReviewDto) {
-    return this.reviewsService.upsertReview(user.userId, dto);
+    const userId = user.id ?? user.userId;
+    return this.reviewsService.upsertReview(userId, dto);
   }
 
   @Get('product/:productId')
@@ -52,6 +53,7 @@ export class ReviewsController {
     @CurrentUser() user: any,
     @Param('productId', ParseIntPipe) productId: number,
   ) {
-    return this.reviewsService.deleteReview(user.userId, productId);
+    const userId = user.id ?? user.userId;
+    return this.reviewsService.deleteReview(userId, productId);
   }
 }

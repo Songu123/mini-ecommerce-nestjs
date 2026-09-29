@@ -18,7 +18,8 @@ export class PaymentsController {
   @ApiResponse({ status: 201, description: 'Tạo phiên thanh toán thành công' })
   @ApiResponse({ status: 400, description: 'Đơn hàng không ở trạng thái AWAITING_PAYMENT' })
   async createPaymentIntent(@CurrentUser() user: any, @Body() dto: CreatePaymentIntentDto) {
-    return this.paymentsService.createPaymentIntent(user.userId, dto);
+    const userId = user.id ?? user.userId;
+    return this.paymentsService.createPaymentIntent(userId, dto);
   }
 
   @Post('webhook')
@@ -35,6 +36,7 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Xem lịch sử các giao dịch thanh toán của tài khoản đang đăng nhập' })
   @ApiResponse({ status: 200, description: 'Danh sách giao dịch thanh toán' })
   async getMyTransactions(@CurrentUser() user: any) {
-    return this.paymentsService.getUserTransactions(user.userId);
+    const userId = user.id ?? user.userId;
+    return this.paymentsService.getUserTransactions(userId);
   }
 }
