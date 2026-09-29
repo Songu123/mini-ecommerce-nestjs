@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -15,6 +15,7 @@ import { OrdersModule } from './orders/orders.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { CartModule } from './cart/cart.module.js';
 import { CouponsModule } from './coupons/coupons.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { CouponsModule } from './coupons/coupons.module.js';
     NotificationsModule,
     CartModule,
     CouponsModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [
