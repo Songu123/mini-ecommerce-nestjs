@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -116,7 +116,7 @@ export class OrdersService {
           totalAmount: finalAmount,
           discountAmount,
           couponId,
-          status: OrderStatus.PENDING,
+          status: OrderStatus.AWAITING_PAYMENT,
           items: {
             create: orderItemsData,
           },
