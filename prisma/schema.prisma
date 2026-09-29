@@ -43,6 +43,7 @@ model User {
   role                 Role                 @default(CUSTOMER)
   orders               Order[]
   cart                 Cart?
+  reviews              Review[]
   refreshTokens        RefreshToken[]
   paymentTransactions  PaymentTransaction[]
   createdAt            DateTime             @default(now())
@@ -79,6 +80,7 @@ model Product {
   category    Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   orderItems  OrderItem[]
   cartItems   CartItem[]
+  reviews     Review[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -178,4 +180,20 @@ model PaymentTransaction {
   @@index([orderId])
   @@index([userId])
   @@index([idempotencyKey])
+}
+
+model Review {
+  id        Int      @id @default(autoincrement())
+  rating    Int      // 1 to 5
+  comment   String?
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId Int
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@index([productId])
+  @@index([userId])
 }
