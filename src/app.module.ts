@@ -1,4 +1,4 @@
-﻿import { Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule } from '@nestjs/config';
@@ -11,11 +11,11 @@ import { CategoriesModule } from './categories/categories.module.js';
 import { ProductsModule } from './products/products.module.js';
 import { OrdersModule } from './orders/orders.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { CartModule } from './cart/cart.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    // Cấu hình Rate Limiting: Mặc định tối đa 60 requests/phút (60000ms) trên mỗi IP
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
@@ -28,11 +28,11 @@ import { NotificationsModule } from './notifications/notifications.module.js';
     ProductsModule,
     OrdersModule,
     NotificationsModule,
+    CartModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
-    // Kích hoạt ThrottlerGuard toàn cục cho toàn bộ ứng dụng
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
