@@ -13,6 +13,7 @@ import { ProductsModule } from './products/products.module.js';
 import { OrdersModule } from './orders/orders.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { CartModule } from './cart/cart.module.js';
+import { CouponsModule } from './coupons/coupons.module.js';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { CartModule } from './cart/cart.module.js';
     OrdersModule,
     NotificationsModule,
     CartModule,
+    CouponsModule,
   ],
   controllers: [AppController],
   providers: [
