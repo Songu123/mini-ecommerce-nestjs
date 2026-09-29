@@ -2,28 +2,34 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { RedisService } from '../redis/redis.service.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
 import { QueryProductDto } from './dto/query-product.dto.js';
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(ProductsService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private redis: RedisService,
+  ) {}
 
   async create(dto: CreateProductDto) {
-    // 1. Kiểm tra danh mục có tồn tại không
     const category = await this.prisma.category.findUnique({
       where: { id: dto.categoryId },
     });
 
     if (!category) {
-      throw new BadRequestException(`Không tìm thấy danh mục với ID ${dto.categoryId}`);
+      throw new BadRequestException('Khong tim thay danh muc voi ID ' + dto.categoryId);
     }
 
-    return this.prisma.product.create({
+    const created = await this.prisma.product.create({
       data: {
         name: dto.name,
         description: dto.description,
@@ -37,6 +43,11 @@ export class ProductsService {
         },
       },
     });
+
+    // Invalidate Cache danh sách sản phẩm
+    await this.redis.delByPattern('products:*');
+
+    return created;
   }
 
   async findAll(query: QueryProductDto) {
@@ -51,9 +62,16 @@ export class ProductsService {
       sortOrder = 'desc',
     } = query;
 
+    // Tạo cache key độc nhất từ toàn bộ query filter
+    const cacheKey = 'products:list:' + JSON.stringify(query);
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      this.logger.log('⚡ Cache Hit: Lay danh sach san pham tu Redis');
+      return cached;
+    }
+
     const skip = (page - 1) * limit;
 
-    // Xây dựng điều kiện lọc (Where clause)
     const where: Prisma.ProductWhereInput = {};
 
     if (search) {
@@ -77,7 +95,6 @@ export class ProductsService {
       }
     }
 
-    // Chạy song song đếm tổng số bản ghi và lấy dữ liệu
     const [total, data] = await Promise.all([
       this.prisma.product.count({ where }),
       this.prisma.product.findMany({
@@ -97,7 +114,7 @@ export class ProductsService {
 
     const totalPages = Math.ceil(total / limit);
 
-    return {
+    const result = {
       data,
       meta: {
         total,
@@ -108,9 +125,21 @@ export class ProductsService {
         hasPrevPage: page > 1,
       },
     };
+
+    // Cache kết quả tìm kiếm/phân trang trong 300s (5 phút)
+    await this.redis.set(cacheKey, result, 300);
+
+    return result;
   }
 
   async findOne(id: number) {
+    const cacheKey = 'products:item:' + id;
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      this.logger.log('⚡ Cache Hit: Lay chi tiet san pham tu Redis (' + id + ')');
+      return cached;
+    }
+
     const product = await this.prisma.product.findUnique({
       where: { id },
       include: {
@@ -121,8 +150,11 @@ export class ProductsService {
     });
 
     if (!product) {
-      throw new NotFoundException(`Không tìm thấy sản phẩm với ID ${id}`);
+      throw new NotFoundException('Khong tim thay san pham voi ID ' + id);
     }
+
+    // Cache chi tiết sản phẩm trong 1800s (30 phút)
+    await this.redis.set(cacheKey, product, 1800);
 
     return product;
   }
@@ -135,11 +167,11 @@ export class ProductsService {
         where: { id: dto.categoryId },
       });
       if (!category) {
-        throw new BadRequestException(`Không tìm thấy danh mục với ID ${dto.categoryId}`);
+        throw new BadRequestException('Khong tim thay danh muc voi ID ' + dto.categoryId);
       }
     }
 
-    return this.prisma.product.update({
+    const updated = await this.prisma.product.update({
       where: { id },
       data: dto,
       include: {
@@ -148,12 +180,28 @@ export class ProductsService {
         },
       },
     });
+
+    // Xóa cache chi tiết và danh sách sản phẩm
+    await Promise.all([
+      this.redis.del('products:item:' + id),
+      this.redis.delByPattern('products:list:*'),
+    ]);
+
+    return updated;
   }
 
   async remove(id: number) {
     await this.findOne(id);
-    return this.prisma.product.delete({
+    const deleted = await this.prisma.product.delete({
       where: { id },
     });
+
+    // Invalidate Cache
+    await Promise.all([
+      this.redis.del('products:item:' + id),
+      this.redis.delByPattern('products:*'),
+    ]);
+
+    return deleted;
   }
 }
