@@ -22,8 +22,7 @@ import {
   ApiBody,
 } from '@nestjs/swagger';
 import { FilesInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { memoryStorage } from 'multer';
 import { Role } from '@prisma/client';
 import { ProductsService } from './products.service.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
@@ -90,7 +89,7 @@ export class ProductsController {
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Tải lên nhiều hình ảnh cho Album sản phẩm (Chỉ ADMIN, tối đa 5 file/lần, 5MB/file, JPG/PNG/WEBP)',
+    summary: 'Tải lên nhiều hình ảnh cho Album sản phẩm (Cloudinary hoặc Local, tối đa 5 file/lần, 5MB/file)',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -111,14 +110,7 @@ export class ProductsController {
   @ApiResponse({ status: 400, description: 'File không hợp lệ hoặc quá dung lượng' })
   @UseInterceptors(
     FilesInterceptor('files', 5, {
-      storage: diskStorage({
-        destination: './uploads/products',
-        filename: (req, file, cb) => {
-          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = extname(file.originalname).toLowerCase();
-          cb(null, `product-${req.params.id}-${uniqueSuffix}${ext}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: {
         fileSize: 5 * 1024 * 1024, // 5MB limit
       },
@@ -141,8 +133,7 @@ export class ProductsController {
     if (!files || files.length === 0) {
       throw new BadRequestException('Vui lòng chọn ít nhất 1 file hình ảnh để tải lên');
     }
-    const filenames = files.map((f) => f.filename);
-    return this.productsService.addProductImages(id, filenames);
+    return this.productsService.addProductImages(id, files);
   }
 
   @Patch(':id/images/:imageId/primary')

@@ -10,6 +10,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { CloudinaryModule } from './cloudinary/cloudinary.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CategoriesModule } from './categories/categories.module.js';
 import { ProductsModule } from './products/products.module.js';
@@ -36,6 +37,7 @@ import { ReviewsModule } from './reviews/reviews.module.js';
     }),
     PrismaModule,
     RedisModule,
+    CloudinaryModule,
     AuthModule,
     CategoriesModule,
     ProductsModule,

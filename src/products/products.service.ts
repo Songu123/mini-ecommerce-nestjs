@@ -7,6 +7,7 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RedisService } from '../redis/redis.service.js';
+import { CloudinaryService } from '../cloudinary/cloudinary.service.js';
 import { CreateProductDto } from './dto/create-product.dto.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
 import { QueryProductDto } from './dto/query-product.dto.js';
@@ -20,6 +21,7 @@ export class ProductsService {
   constructor(
     private prisma: PrismaService,
     private redis: RedisService,
+    private cloudinary: CloudinaryService,
   ) {}
 
   async create(dto: CreateProductDto) {
@@ -210,16 +212,24 @@ export class ProductsService {
   async remove(id: number) {
     const product = await this.findOne(id);
 
-    // Xóa tất cả file ảnh vật lý trên ổ đĩa
+    // Xóa tất cả file ảnh vật lý hoặc trên Cloudinary
     if (product.images && product.images.length > 0) {
       for (const img of product.images) {
-        try {
-          const filePath = path.join(process.cwd(), img.url.replace(/^\//, ''));
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
+        if (img.url.startsWith('http')) {
+          // Trích xuất publicId Cloudinary nếu là link cloudinary
+          const parts = img.url.split('/');
+          const filenameWithExt = parts.slice(-2).join('/'); // folder/name.ext
+          const publicId = filenameWithExt.substring(0, filenameWithExt.lastIndexOf('.'));
+          await this.cloudinary.deleteFile(publicId);
+        } else {
+          try {
+            const filePath = path.join(process.cwd(), img.url.replace(/^\//, ''));
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+            }
+          } catch (err: any) {
+            this.logger.warn(`Failed to delete local image file: ${err?.message || err}`);
           }
-        } catch (err: any) {
-          this.logger.warn(`Failed to delete product image file: ${err?.message || err}`);
         }
       }
     }
@@ -238,9 +248,9 @@ export class ProductsService {
   }
 
   /**
-   * Thêm danh sách ảnh mới cho sản phẩm (Gallery)
+   * Thêm danh sách ảnh mới cho sản phẩm (Hỗ trợ cả Cloudinary và Local Storage)
    */
-  async addProductImages(productId: number, filenames: string[]) {
+  async addProductImages(productId: number, files: Express.Multer.File[]) {
     await this.findOne(productId);
 
     // Kiểm tra xem sản phẩm đã có ảnh primary nào chưa
@@ -251,14 +261,36 @@ export class ProductsService {
     const createdImages = [];
     let hasPrimary = !!existingPrimary;
 
-    for (let i = 0; i < filenames.length; i++) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      let imageUrl: string;
+
+      if (this.cloudinary.isEnabled && file.buffer) {
+        // Upload lên Cloudinary
+        const uploadRes = await this.cloudinary.uploadFile(file);
+        imageUrl = uploadRes.url;
+      } else {
+        // Lưu cục bộ local storage
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const ext = path.extname(file.originalname).toLowerCase();
+        const filename = `product-${productId}-${uniqueSuffix}${ext}`;
+        const uploadDir = path.join(process.cwd(), 'uploads/products');
+        
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        
+        fs.writeFileSync(path.join(uploadDir, filename), file.buffer);
+        imageUrl = `/uploads/products/${filename}`;
+      }
+
       const isPrimary = !hasPrimary && i === 0;
       if (isPrimary) hasPrimary = true;
 
       const img = await this.prisma.productImage.create({
         data: {
           productId,
-          url: `/uploads/products/${filenames[i]}`,
+          url: imageUrl,
           isPrimary,
         },
       });
@@ -272,7 +304,8 @@ export class ProductsService {
     ]);
 
     return {
-      message: `Đã tải lên thành công ${filenames.length} hình ảnh cho sản phẩm #${productId}`,
+      message: `Đã tải lên thành công ${files.length} hình ảnh cho sản phẩm #${productId}`,
+      storage: this.cloudinary.isEnabled ? 'Cloudinary (Cloud Storage)' : 'Local Storage (/uploads/products)',
       images: createdImages,
     };
   }
@@ -327,14 +360,21 @@ export class ProductsService {
       throw new NotFoundException(`Không tìm thấy hình ảnh #${imageId} thuộc sản phẩm #${productId}`);
     }
 
-    // Xóa file vật lý
-    try {
-      const filePath = path.join(process.cwd(), image.url.replace(/^\//, ''));
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+    // Xóa file vật lý hoặc Cloudinary
+    if (image.url.startsWith('http')) {
+      const parts = image.url.split('/');
+      const filenameWithExt = parts.slice(-2).join('/');
+      const publicId = filenameWithExt.substring(0, filenameWithExt.lastIndexOf('.'));
+      await this.cloudinary.deleteFile(publicId);
+    } else {
+      try {
+        const filePath = path.join(process.cwd(), image.url.replace(/^\//, ''));
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      } catch (err: any) {
+        this.logger.warn(`Failed to delete local image file: ${err?.message || err}`);
       }
-    } catch (err: any) {
-      this.logger.warn(`Failed to delete image file: ${err?.message || err}`);
     }
 
     await this.prisma.productImage.delete({
