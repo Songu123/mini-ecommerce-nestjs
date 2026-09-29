@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Real-time Order Notifications Test - Mini E-Commerce</title>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 24px;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #38bdf8;
+      font-size: 24px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .connected { background: #16a34a; color: white; }
+    .disconnected { background: #dc2626; color: white; }
+    .card {
+      background: #1e293b;
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 16px;
+      border: 1px solid #334155;
+    }
+    .btn {
+      background: #2563eb;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      margin-right: 8px;
+    }
+    .btn:hover { background: #1d4ed8; }
+    #logs {
+      margin-top: 20px;
+      max-height: 400px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 10px;
+    }
+    .log-item {
+      background: #090d16;
+      border-left: 4px solid #38bdf8;
+      padding: 12px 16px;
+      border-radius: 4px;
+      animation: fadeIn 0.3s ease;
+    }
+    .log-item.status { border-left-color: #f59e0b; }
+    .log-time { color: #94a3b8; font-size: 12px; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>⚡ Real-time Order Notifications (Socket.io)</h1>
+    <p>Trạng thái kết nối: <span id="status" class="badge disconnected">Chưa kết nối</span></p>
+
+    <div class="card">
+      <h3>Chọn vai trò nhận thông báo:</h3>
+      <button class="btn" onclick="joinAdmin()">Tham gia phòng ADMIN</button>
+      <button class="btn" onclick="joinUser(2)">Tham gia phòng CUSTOMER (User ID: 2 - Sơn)</button>
+      <button class="btn" onclick="joinUser(3)">Tham gia phòng CUSTOMER (User ID: 3 - Mai)</button>
+    </div>
+
+    <div class="card">
+      <h3>Hộp thư thông báo thời gian thực (Live Events):</h3>
+      <div id="logs">
+        <div class="log-item">
+          <div class="log-time">Sẵn sàng</div>
+          <div>Hãy đặt hàng qua Swagger để nhìn thấy thông báo nảy lên ngay tại đây!</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = io('http://localhost:3000');
+    const statusEl = document.getElementById('status');
+    const logsEl = document.getElementById('logs');
+
+    socket.on('connect', () => {
+      statusEl.className = 'badge connected';
+      statusEl.textContent = 'Đã kết nối Socket.io (' + socket.id + ')';
+      // Mặc định vào phòng Admin
+      joinAdmin();
+    });
+
+    socket.on('disconnect', () => {
+      statusEl.className = 'badge disconnected';
+      statusEl.textContent = 'Mất kết nối';
+    });
+
+    function joinAdmin() {
+      socket.emit('joinRoom', { role: 'ADMIN' }, (res) => {
+        addLog('ADMIN', 'Đã tham gia phòng thông báo Admin (admin_room)');
+      });
+    }
+
+    function joinUser(userId) {
+      socket.emit('joinRoom', { userId: userId }, (res) => {
+        addLog('USER', `Đã tham gia phòng thông báo của Khách hàng (User #${userId})`);
+      });
+    }
+
+    // Lắng nghe sự kiện đơn hàng mới
+    socket.on('orderCreated', (data) => {
+      addLog('orderCreated', data.message, data.order);
+    });
+
+    // Lắng nghe sự kiện cập nhật trạng thái đơn
+    socket.on('orderStatusUpdated', (data) => {
+      addLog('orderStatusUpdated', data.message, data.order, true);
+    });
+
+    function addLog(type, message, details = null, isStatus = false) {
+      const item = document.createElement('div');
+      item.className = 'log-item' + (isStatus ? ' status' : '');
+      const timeStr = new Date().toLocaleTimeString();
+      let html = `<div class="log-time">[${timeStr}] <strong>${type}</strong></div>`;
+      html += `<div style="margin-top: 4px; font-size: 15px;">${message}</div>`;
+      if (details) {
+        html += `<pre style="font-size: 11px; color: #a5f3fc; background: #020617; padding: 6px; border-radius: 4px; overflow-x: auto;">${JSON.stringify(details, null, 2)}</pre>`;
+      }
+      item.innerHTML = html;
+      logsEl.prepend(item);
+    }
+  </script>
+</body>
+</html>
