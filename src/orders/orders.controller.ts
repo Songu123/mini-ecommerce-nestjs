@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Get,
   Post,
@@ -15,6 +15,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Role } from '@prisma/client';
 import { OrdersService } from './orders.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
@@ -31,14 +32,20 @@ import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
+  // Giới hạn tối đa 10 lần đặt hàng trong 1 phút để chống spam tạo đơn rác
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post()
   @ApiOperation({
-    summary: 'Đặt hàng mới (Trừ tồn kho tự động qua ACID Transaction)',
+    summary: 'Đặt hàng mới (Trừ tồn kho tự động qua ACID Transaction - Giới hạn 10 đơn/phút)',
   })
   @ApiResponse({ status: 201, description: 'Đặt hàng thành công' })
   @ApiResponse({
     status: 400,
     description: 'Sản phẩm không đủ tồn kho hoặc không tồn tại',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Quá nhiều yêu cầu tạo đơn liên tiếp (Throttled)',
   })
   create(@CurrentUser() user: any, @Body() createOrderDto: CreateOrderDto) {
     return this.ordersService.create(user.id, createOrderDto);

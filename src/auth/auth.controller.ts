@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Post,
   Body,
@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -33,11 +34,14 @@ export class AuthController {
     return this.authService.register(registerDto);
   }
 
+  // Giới hạn nghiêm ngặt: Tối đa 5 lần thử đăng nhập trong 1 phút để chống Brute-force
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Đăng nhập và nhận cặp Access Token & Refresh Token' })
+  @ApiOperation({ summary: 'Đăng nhập (Giới hạn tối đa 5 lần/phút chống Brute-force)' })
   @ApiResponse({ status: 200, description: 'Đăng nhập thành công' })
   @ApiResponse({ status: 401, description: 'Email hoặc mật khẩu không chính xác' })
+  @ApiResponse({ status: 429, description: 'Quá nhiều yêu cầu thử đăng nhập (Throttled)' })
   login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }
