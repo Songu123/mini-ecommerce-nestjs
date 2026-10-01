@@ -25,6 +25,7 @@ export default function LoginPage() {
   const { isAuthenticated, setAuth } = useAuthStore();
   const { success, error } = useToast();
   const [loading, setLoading] = useState(false);
+  const hasFetchedToken = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (isAuthenticated) {
@@ -32,7 +33,8 @@ export default function LoginPage() {
     }
 
     const token = searchParams.get('token');
-    if (token) {
+    if (token && hasFetchedToken.current !== token) {
+      hasFetchedToken.current = token;
       setLoading(true);
       // Fetch profile to get user info
       fetch(process.env.NEXT_PUBLIC_API_URL + '/auth/profile', {
@@ -43,9 +45,13 @@ export default function LoginPage() {
           setAuth(user, token);
           success('Đăng nhập bằng Google thành công!');
           router.replace('/');
+        } else {
+          error('Không thể lấy thông tin tài khoản Google');
+          router.replace('/login');
         }
       }).catch(() => {
         error('Đăng nhập Google thất bại');
+        router.replace('/login');
       }).finally(() => setLoading(false));
     }
   }, [isAuthenticated, router, searchParams, setAuth, success, error]);
