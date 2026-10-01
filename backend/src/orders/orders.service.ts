@@ -153,7 +153,6 @@ export class OrdersService {
           items: {
             include: {
               product: { select: { id: true, name: true, images: { select: { url: true, isPrimary: true } } } },
-              productVariant: { select: { id: true, name: true } },
             },
           },
         },
