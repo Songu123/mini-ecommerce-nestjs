@@ -8,7 +8,9 @@ import {
   IsPositive,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { ProductVariantDto } from './update-product.dto.js';
 
 export class CreateProductDto {
   @ApiProperty({ example: 'iPhone 16 Pro Max 256GB', description: 'Tên sản phẩm' })
@@ -38,4 +40,10 @@ export class CreateProductDto {
   @IsInt({ message: 'ID danh mục phải là số nguyên' })
   @IsPositive({ message: 'ID danh mục phải hợp lệ' })
   categoryId: number;
+
+  @ApiPropertyOptional({ description: 'Danh sách phân loại sản phẩm (tùy chọn)' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ProductVariantDto)
+  variants?: ProductVariantDto[];
 }

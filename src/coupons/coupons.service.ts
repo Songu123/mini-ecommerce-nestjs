@@ -6,17 +6,21 @@ import {
 } from '@nestjs/common';
 import { DiscountType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
 import { CreateCouponDto } from './dto/create-coupon.dto.js';
 import { ApplyCouponDto } from './dto/apply-coupon.dto.js';
 
 @Injectable()
 export class CouponsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditService
+  ) {}
 
   /**
    * Tạo mã giảm giá mới (Chỉ ADMIN)
    */
-  async create(dto: CreateCouponDto) {
+  async create(dto: CreateCouponDto, userId?: number) {
     const formattedCode = dto.code.trim().toUpperCase();
 
     const existing = await this.prisma.coupon.findUnique({
@@ -31,12 +35,24 @@ export class CouponsService {
       throw new BadRequestException('Ngay bat dau phai truoc ngay ket thuc');
     }
 
-    return this.prisma.coupon.create({
+    const newCoupon = await this.prisma.coupon.create({
       data: {
         ...dto,
         code: formattedCode,
       },
     });
+
+    if (userId) {
+      await this.auditService.logAction(
+        userId,
+        'CREATE_COUPON',
+        'Coupon',
+        newCoupon.id.toString(),
+        { code: newCoupon.code, discount: newCoupon.discountValue }
+      );
+    }
+
+    return newCoupon;
   }
 
   /**
@@ -49,6 +65,15 @@ export class CouponsService {
         startDate: { lte: now },
         endDate: { gte: now },
       },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Lấy toàn bộ danh sách mã giảm giá (Chỉ ADMIN)
+   */
+  async findAll() {
+    return this.prisma.coupon.findMany({
       orderBy: { createdAt: 'desc' },
     });
   }

@@ -1,27 +1,52 @@
-﻿import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, PaymentMethod } from '@prisma/client';
+import { OrdersGateway } from '../notifications/orders.gateway.js';
+import { RedisService } from '../redis/redis.service.js';
 
 @Injectable()
 export class OrdersExpirationService {
   private readonly logger = new Logger(OrdersExpirationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ordersGateway: OrdersGateway,
+    private readonly redis: RedisService,
+  ) {}
 
   @Cron(CronExpression.EVERY_MINUTE)
   async handleExpiredOrders() {
-    const expirationThreshold = new Date(Date.now() - 15 * 60 * 1000); // 15 mins ago
+    // Configurable timeouts (minutes)
+    const timeoutOnlineMs = Number(process.env.ORDER_CANCEL_TIMEOUT_MINUTES || '15') * 60 * 1000;
+    const timeoutCODMs = Number(process.env.ORDER_CANCEL_TIMEOUT_COD_MINUTES || '1440') * 60 * 1000; // default 24h
+    const now = new Date();
 
-    const expiredOrders = await this.prisma.order.findMany({
+    // ------- ONLINE orders (short timeout) -------
+    const onlineExpired = await this.prisma.order.findMany({
       where: {
-        status: OrderStatus.AWAITING_PAYMENT,
-        createdAt: { lte: expirationThreshold },
+        AND: [
+          { createdAt: { lte: new Date(now.getTime() - timeoutOnlineMs) } },
+          { status: { in: [OrderStatus.AWAITING_PAYMENT, OrderStatus.PENDING] } },
+          { paymentMethod: PaymentMethod.ONLINE },
+        ],
       },
-      include: {
-        items: true,
-      },
+      include: { items: true },
     });
+
+    // ------- COD orders (longer timeout) -------
+    const codExpired = await this.prisma.order.findMany({
+      where: {
+        AND: [
+          { createdAt: { lte: new Date(now.getTime() - timeoutCODMs) } },
+          { status: OrderStatus.PENDING },
+          { paymentMethod: PaymentMethod.COD },
+        ],
+      },
+      include: { items: true },
+    });
+
+    const expiredOrders = [...onlineExpired, ...codExpired];
 
     if (expiredOrders.length === 0) {
       return;
@@ -35,19 +60,35 @@ export class OrdersExpirationService {
           // 1. Mark order as CANCELLED
           await tx.order.update({
             where: { id: order.id },
-            data: { status: OrderStatus.CANCELLED },
+            data: { 
+              status: OrderStatus.CANCELLED,
+              cancelReason: 'Hệ thống tự động hủy do quá hạn',
+              history: {
+                create: [
+                  {
+                    oldStatus: order.status,
+                    newStatus: OrderStatus.CANCELLED,
+                    note: 'Hệ thống tự động hủy do quá hạn',
+                    createdBy: 'SYSTEM',
+                  }
+                ]
+              }
+            },
           });
 
           // 2. Restock products atomically
           for (const item of order.items) {
-            await tx.product.update({
-              where: { id: item.productId },
-              data: {
-                stock: {
-                  increment: item.quantity,
-                },
-              },
-            });
+            if (item.productVariantId) {
+              await tx.productVariant.update({
+                where: { id: item.productVariantId },
+                data: { stock: { increment: item.quantity } },
+              });
+            } else {
+              await tx.product.update({
+                where: { id: item.productId },
+                data: { stock: { increment: item.quantity } },
+              });
+            }
           }
 
           // 3. Revert coupon usage if applied

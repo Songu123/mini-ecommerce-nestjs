@@ -1,4 +1,4 @@
-﻿import {
+import {
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -40,6 +40,13 @@ export class ProductsService {
         price: dto.price,
         stock: dto.stock,
         categoryId: dto.categoryId,
+        variants: dto.variants?.length ? {
+          create: dto.variants.map(v => ({
+            name: v.name,
+            stock: v.stock,
+            price: v.price
+          }))
+        } : undefined,
       },
       include: {
         category: {
@@ -116,6 +123,7 @@ export class ProductsService {
           images: {
             orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
           },
+          variants: true,
         },
       }),
     ]);
@@ -157,6 +165,7 @@ export class ProductsService {
         images: {
           orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
         },
+        variants: true,
         reviews: {
           take: 5,
           orderBy: { createdAt: 'desc' },
@@ -189,14 +198,42 @@ export class ProductsService {
       }
     }
 
+    const { variants, ...productData } = dto;
+
+    if (variants) {
+      const existingVariants = await this.prisma.productVariant.findMany({ where: { productId: id } });
+      const incomingIds = variants.map(v => v.id).filter(vid => vid != null);
+      
+      const toDelete = existingVariants.filter(v => !incomingIds.includes(v.id));
+      if (toDelete.length > 0) {
+        await this.prisma.productVariant.deleteMany({
+          where: { id: { in: toDelete.map(v => v.id) } }
+        });
+      }
+
+      for (const v of variants) {
+        if (v.id) {
+          await this.prisma.productVariant.update({
+            where: { id: v.id },
+            data: { name: v.name, stock: v.stock, price: v.price }
+          });
+        } else {
+          await this.prisma.productVariant.create({
+            data: { productId: id, name: v.name, stock: v.stock, price: v.price }
+          });
+        }
+      }
+    }
+
     const updated = await this.prisma.product.update({
       where: { id },
-      data: dto,
+      data: productData,
       include: {
         category: {
           select: { id: true, name: true },
         },
         images: true,
+        variants: true,
       },
     });
 

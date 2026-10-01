@@ -1,5 +1,5 @@
 {
-  "name": "mini-ecommerce-nestjs",
+  "name": "backend",
   "version": "1.0.0",
   "description": "Modular RESTful API for Mini E-Commerce built with NestJS, TypeScript, PostgreSQL, Prisma, JWT, and Socket.io",
   "author": "",
@@ -51,7 +51,8 @@
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.4",
     "streamifier": "^0.1.1",
-    "swagger-ui-express": "^5.0.1"
+    "swagger-ui-express": "^5.0.1",
+    "vnpay": "^2.5.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",

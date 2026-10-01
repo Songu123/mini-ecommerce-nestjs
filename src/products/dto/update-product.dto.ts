@@ -7,6 +7,7 @@ import {
   IsPositive,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
 export class UpdateProductDto {
@@ -40,4 +41,27 @@ export class UpdateProductDto {
   @IsInt({ message: 'ID danh mục phải là số nguyên' })
   @IsPositive({ message: 'ID danh mục phải hợp lệ' })
   categoryId?: number;
+
+  @ApiPropertyOptional({ description: 'Danh sách phân loại sản phẩm (tùy chọn)' })
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ProductVariantDto)
+  variants?: ProductVariantDto[];
+}
+
+export class ProductVariantDto {
+  @IsOptional()
+  @IsInt()
+  id?: number;
+
+  @IsString()
+  name: string;
+
+  @IsInt()
+  @Min(0)
+  stock: number;
+
+  @IsOptional()
+  @IsNumber()
+  price?: number;
 }

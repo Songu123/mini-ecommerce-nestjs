@@ -11,6 +11,14 @@ export class UpdateOrderStatusDto {
   })
   @IsEnum(OrderStatus, { message: 'Trạng thái đơn hàng không hợp lệ' })
   status: OrderStatus;
+
+  @ApiPropertyOptional({ example: 'GHTK', description: 'Đơn vị vận chuyển (Bắt buộc khi SHIPPED)' })
+  @IsOptional()
+  shippingProvider?: string;
+
+  @ApiPropertyOptional({ example: 'S222.123456789', description: 'Mã vận đơn (Bắt buộc khi SHIPPED)' })
+  @IsOptional()
+  trackingNumber?: string;
 }
 
 export class QueryOrderDto extends PaginationDto {

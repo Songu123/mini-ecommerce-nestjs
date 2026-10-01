@@ -9,6 +9,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -36,14 +37,23 @@ export class CouponsController {
   @ApiOperation({ summary: 'Tạo mã giảm giá mới (Chỉ dành cho ADMIN)' })
   @ApiResponse({ status: 201, description: 'Tạo mã thành công' })
   @ApiResponse({ status: 403, description: 'Chỉ ADMIN mới có quyền' })
-  create(@Body() createCouponDto: CreateCouponDto) {
-    return this.couponsService.create(createCouponDto);
+  create(@Body() createCouponDto: CreateCouponDto, @Req() req: any) {
+    return this.couponsService.create(createCouponDto, req.user.id);
   }
 
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách các mã giảm giá đang hoạt động (Public)' })
   findAllActive() {
     return this.couponsService.findAllActive();
+  }
+
+  @Get('all')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Lấy toàn bộ danh sách mã giảm giá (Chỉ dành cho ADMIN)' })
+  findAll() {
+    return this.couponsService.findAll();
   }
 
   @Post('apply')

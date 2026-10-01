@@ -1,12 +1,8 @@
-﻿import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  ForbiddenException,
-} from '@nestjs/common';
-import { OrderStatus, Role, DiscountType } from '@prisma/client';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { OrderStatus, Role, DiscountType, PaymentMethod } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OrdersGateway } from '../notifications/orders.gateway.js';
+import { RedisService } from '../redis/redis.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 import { QueryOrderDto, UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
 
@@ -15,18 +11,21 @@ export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private ordersGateway: OrdersGateway,
+    private redis: RedisService,
   ) {}
 
   async create(userId: number, dto: CreateOrderDto) {
-    const productIds = dto.items.map((item) => item.productId);
-    const uniqueProductIds = new Set(productIds);
-    if (uniqueProductIds.size !== productIds.length) {
+    const itemKeys = dto.items.map((item) => `${item.productId}-${item.productVariantId || 'none'}`);
+    const uniqueItemKeys = new Set(itemKeys);
+    if (uniqueItemKeys.size !== itemKeys.length) {
       throw new BadRequestException('Danh sach mat hang co san pham bi lap lai');
     }
+    const productIds = dto.items.map(i => i.productId);
 
     const createdOrder = await this.prisma.$transaction(async (tx) => {
       const products = await tx.product.findMany({
         where: { id: { in: productIds } },
+        include: { variants: true },
       });
 
       if (products.length !== productIds.length) {
@@ -35,28 +34,39 @@ export class OrdersService {
 
       const productMap = new Map(products.map((p) => [p.id, p]));
       let totalAmount = 0;
-      const orderItemsData: Array<{ productId: number; quantity: number; price: number }> = [];
+      const orderItemsData: Array<{ productId: number; productVariantId?: number; variantName?: string; quantity: number; price: number }> = [];
 
       for (const item of dto.items) {
         const product = productMap.get(item.productId)!;
-        const updateResult = await tx.product.updateMany({
-          where: {
-            id: product.id,
-            stock: { gte: item.quantity },
-          },
-          data: {
-            stock: { decrement: item.quantity },
-          },
-        });
+        
+        let itemPrice = Number(product.price);
+        let variantName: string | undefined = undefined;
 
-        if (updateResult.count === 0) {
-          throw new BadRequestException('San pham ' + product.name + ' khong du hang hoac vua co nguoi mua truoc!');
+        if (item.productVariantId) {
+          const variant = product.variants.find(v => v.id === item.productVariantId);
+          if (!variant) throw new BadRequestException('Khong tim thay phan loai cho san pham ' + product.name);
+          
+          const updateResult = await tx.productVariant.updateMany({
+            where: { id: variant.id, stock: { gte: item.quantity } },
+            data: { stock: { decrement: item.quantity } }
+          });
+          if (updateResult.count === 0) throw new BadRequestException('Phan loai ' + variant.name + ' khong du hang hoac vua co nguoi mua!');
+          
+          if (variant.price) itemPrice = Number(variant.price);
+          variantName = variant.name;
+        } else {
+          const updateResult = await tx.product.updateMany({
+            where: { id: product.id, stock: { gte: item.quantity } },
+            data: { stock: { decrement: item.quantity } },
+          });
+          if (updateResult.count === 0) throw new BadRequestException('San pham ' + product.name + ' khong du hang hoac vua co nguoi mua!');
         }
 
-        const itemPrice = Number(product.price);
         totalAmount += itemPrice * item.quantity;
         orderItemsData.push({
           productId: product.id,
+          productVariantId: item.productVariantId,
+          variantName: variantName,
           quantity: item.quantity,
           price: itemPrice,
         });
@@ -110,22 +120,38 @@ export class OrdersService {
 
       const finalAmount = Math.max(0, totalAmount - discountAmount);
 
+      const orderStatus = dto.paymentMethod === PaymentMethod.COD ? OrderStatus.PENDING : OrderStatus.AWAITING_PAYMENT;
+
       const order = await tx.order.create({
         data: {
           userId,
           totalAmount: finalAmount,
           discountAmount,
           couponId,
-          status: OrderStatus.AWAITING_PAYMENT,
+          status: orderStatus,
+          shippingAddress: dto.shippingAddress,
+          paymentMethod: dto.paymentMethod ?? PaymentMethod.COD,
+          phone: dto.phone,
+          note: dto.note,
           items: {
             create: orderItemsData,
           },
+          history: {
+            create: [
+              {
+                newStatus: orderStatus,
+                note: 'Đơn hàng được tạo mới',
+                createdBy: 'CUSTOMER',
+              }
+            ]
+          }
         },
         include: {
           coupon: true,
           items: {
             include: {
-              product: { select: { id: true, name: true } },
+              product: { select: { id: true, name: true, images: { select: { url: true, isPrimary: true } } } },
+              productVariant: { select: { id: true, name: true } },
             },
           },
         },
@@ -133,6 +159,12 @@ export class OrdersService {
 
       return order;
     });
+
+    // Invalidate product cache for affected products
+    await Promise.all([
+      ...productIds.map(id => this.redis.del('products:item:' + id)),
+      this.redis.delByPattern('products:list:*'),
+    ]);
 
     this.ordersGateway.notifyOrderCreated(createdOrder);
     return createdOrder;
@@ -155,9 +187,10 @@ export class OrdersService {
         include: {
           user: { select: { id: true, email: true, name: true } },
           coupon: true,
+          history: { orderBy: { createdAt: 'desc' } },
           items: {
             include: {
-              product: { select: { id: true, name: true } },
+              product: { select: { id: true, name: true, images: { select: { url: true, isPrimary: true } } } },
             },
           },
         },
@@ -177,9 +210,10 @@ export class OrdersService {
       include: {
         user: { select: { id: true, email: true, name: true } },
         coupon: true,
+        history: { orderBy: { createdAt: 'desc' } },
         items: {
           include: {
-            product: { select: { id: true, name: true, price: true } },
+            product: { select: { id: true, name: true, price: true, images: { select: { url: true, isPrimary: true } } } },
           },
         },
       },
@@ -206,27 +240,135 @@ export class OrdersService {
     const updatedOrder = await this.prisma.$transaction(async (tx) => {
       if (dto.status === OrderStatus.CANCELLED) {
         for (const item of order.items) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stock: { increment: item.quantity } },
-          });
+          if (item.productVariantId) {
+            await tx.productVariant.update({
+              where: { id: item.productVariantId },
+              data: { stock: { increment: item.quantity } },
+            });
+          } else {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { stock: { increment: item.quantity } },
+            });
+          }
         }
       }
 
       return tx.order.update({
         where: { id },
-        data: { status: dto.status },
+        data: { 
+          status: dto.status,
+          ...(dto.shippingProvider && { shippingProvider: dto.shippingProvider }),
+          ...(dto.trackingNumber && { trackingNumber: dto.trackingNumber }),
+          history: {
+            create: [
+              {
+                oldStatus: order.status,
+                newStatus: dto.status,
+                createdBy: 'ADMIN',
+              }
+            ]
+          }
+        },
         include: {
           coupon: true,
           items: {
             include: {
-              product: { select: { id: true, name: true } },
+              product: { select: { id: true, name: true, images: { select: { url: true, isPrimary: true } } } },
             },
           },
         },
       });
     });
 
+    // Invalidate product cache after status change (e.g., cancellation)
+    const affectedProductIds = order.items.map(item => item.productId);
+    await Promise.all([
+      ...affectedProductIds.map(id => this.redis.del('products:item:' + id)),
+      this.redis.delByPattern('products:list:*'),
+    ]);
+
+    this.ordersGateway.notifyOrderStatusUpdated(updatedOrder);
+    return updatedOrder;
+
+  }
+
+  // User‑initiated cancellation
+  async cancelOrder(userId: number, orderId: number, reason?: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { items: true },
+    });
+
+    if (!order) throw new NotFoundException('Khong tim thay don hang');
+    if (order.userId !== userId) {
+      throw new ForbiddenException('Khong co quyen huy don hang nay');
+    }
+
+    // Only allow cancellation in specific statuses
+    const cancellable: OrderStatus[] = [OrderStatus.PENDING, OrderStatus.AWAITING_PAYMENT];
+    if (!cancellable.includes(order.status)) {
+      throw new BadRequestException('Don hang khong the huy trong trạng thái hiện tại');
+    }
+
+    // Perform cancellation transaction (restock and update status)
+    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+      // Restock each product or variant
+      for (const item of order.items) {
+        if (item.productVariantId) {
+          await tx.productVariant.update({
+            where: { id: item.productVariantId },
+            data: { stock: { increment: item.quantity } },
+          });
+        } else {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+      }
+      // Update order status to CANCELLED
+      return tx.order.update({
+        where: { id: orderId },
+        data: { 
+          status: OrderStatus.CANCELLED,
+          cancelReason: reason || null,
+          history: {
+            create: [
+              {
+                oldStatus: order.status,
+                newStatus: OrderStatus.CANCELLED,
+                note: reason || 'Khách hàng tự hủy đơn',
+                createdBy: 'CUSTOMER',
+              }
+            ]
+          }
+        },
+        include: {
+          coupon: true,
+          items: {
+            include: {
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  images: { select: { url: true, isPrimary: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    // Invalidate product cache for affected items
+    const affectedProductIds = order.items.map((i) => i.productId);
+    await Promise.all([
+      ...affectedProductIds.map((id) => this.redis.del('products:item:' + id)),
+      this.redis.delByPattern('products:list:*'),
+    ]);
+
+    // Notify front‑end via gateway
     this.ordersGateway.notifyOrderStatusUpdated(updatedOrder);
     return updatedOrder;
   }

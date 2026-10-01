@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsPositive } from 'class-validator';
+import { IsInt, IsOptional, IsPositive } from 'class-validator';
 
 export class AddToCartDto {
   @ApiProperty({ example: 1, description: 'ID sản phẩm muốn thêm vào giỏ hàng' })
@@ -14,4 +14,10 @@ export class AddToCartDto {
   @IsInt({ message: 'Số lượng phải là số nguyên' })
   @IsPositive({ message: 'Số lượng phải lớn hơn 0' })
   quantity: number = 1;
+
+  @ApiProperty({ example: 2, required: false, description: 'ID phân loại sản phẩm (nếu có)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  productVariantId?: number;
 }

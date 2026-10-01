@@ -15,6 +15,7 @@ async function main() {
   await prisma.order.deleteMany();
   await prisma.coupon.deleteMany();
   await prisma.productImage.deleteMany();
+  await prisma.productVariant.deleteMany();
   await prisma.refreshToken.deleteMany();
   await prisma.product.deleteMany();
   await prisma.category.deleteMany();
@@ -98,6 +99,11 @@ async function main() {
         'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=800',
         'https://images.unsplash.com/photo-1510557880182-3d4d3cba35a5?w=800',
       ],
+      variants: [
+        { name: 'Titan Sa mạc', stock: 15, price: 34990000 },
+        { name: 'Titan Đen', stock: 10, price: 34990000 },
+        { name: 'Titan Trắng', stock: 5, price: 34990000 }
+      ]
     },
     {
       name: 'Samsung Galaxy S24 Ultra 512GB',
@@ -300,7 +306,7 @@ async function main() {
 
   const createdProducts = [];
   for (const item of productsData) {
-    const { images, ...productData } = item;
+    const { images, variants, ...productData } = item;
     const prod = await prisma.product.create({
       data: {
         ...productData,
@@ -310,9 +316,17 @@ async function main() {
             isPrimary: index === 0,
           })),
         },
+        variants: variants ? {
+          create: variants.map(v => ({
+            name: v.name,
+            stock: v.stock,
+            price: v.price
+          }))
+        } : undefined
       },
       include: {
         images: true,
+        variants: true,
       },
     });
     createdProducts.push(prod);

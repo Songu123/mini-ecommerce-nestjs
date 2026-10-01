@@ -1,4 +1,4 @@
-﻿import { Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -20,7 +20,8 @@ import { CartModule } from './cart/cart.module.js';
 import { CouponsModule } from './coupons/coupons.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { ReviewsModule } from './reviews/reviews.module.js';
-
+import { AdminModule } from './admin/admin.module.js';
+import { AuditModule } from './audit/audit.module.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -28,7 +29,7 @@ import { ReviewsModule } from './reviews/reviews.module.js';
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
-        limit: 60,
+        limit: 10000,
       },
     ]),
     ServeStaticModule.forRoot({
@@ -47,6 +48,8 @@ import { ReviewsModule } from './reviews/reviews.module.js';
     CouponsModule,
     PaymentsModule,
     ReviewsModule,
+    AdminModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [

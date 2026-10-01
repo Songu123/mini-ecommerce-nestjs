@@ -24,6 +24,9 @@ export class CartService {
                 name: true,
                 price: true,
                 stock: true,
+                images: {
+                  select: { url: true, isPrimary: true },
+                },
                 category: {
                   select: { id: true, name: true },
                 },
@@ -46,6 +49,9 @@ export class CartService {
                   name: true,
                   price: true,
                   stock: true,
+                  images: {
+                    select: { url: true, isPrimary: true },
+                  },
                   category: {
                     select: { id: true, name: true },
                   },
@@ -91,14 +97,24 @@ export class CartService {
   async addToCart(userId: number, dto: AddToCartDto) {
     const product = await this.prisma.product.findUnique({
       where: { id: dto.productId },
+      include: { variants: true }
     });
 
     if (!product) {
       throw new NotFoundException('Khong tim thay san pham voi ID ' + dto.productId);
     }
 
-    if (product.stock < dto.quantity) {
-      throw new BadRequestException('So luong yeu cau vuot qua ton kho hien tai (' + product.stock + ')');
+    let stockToCheck = product.stock;
+    if (dto.productVariantId) {
+      const variant = product.variants.find(v => v.id === dto.productVariantId);
+      if (!variant) {
+        throw new NotFoundException('Khong tim thay phan loai san pham nay');
+      }
+      stockToCheck = variant.stock;
+    }
+
+    if (stockToCheck < dto.quantity) {
+      throw new BadRequestException('So luong yeu cau vuot qua ton kho hien tai (' + stockToCheck + ')');
     }
 
     const cart = await this.prisma.cart.upsert({
@@ -107,19 +123,18 @@ export class CartService {
       update: {},
     });
 
-    const existingItem = await this.prisma.cartItem.findUnique({
+    const existingItem = await this.prisma.cartItem.findFirst({
       where: {
-        cartId_productId: {
-          cartId: cart.id,
-          productId: dto.productId,
-        },
+        cartId: cart.id,
+        productId: dto.productId,
+        productVariantId: dto.productVariantId || null,
       },
     });
 
     if (existingItem) {
       const newQuantity = existingItem.quantity + dto.quantity;
-      if (product.stock < newQuantity) {
-        throw new BadRequestException('Tong so luong trong gio (' + newQuantity + ') vuot qua ton kho (' + product.stock + ')');
+      if (stockToCheck < newQuantity) {
+        throw new BadRequestException('Tong so luong trong gio (' + newQuantity + ') vuot qua ton kho (' + stockToCheck + ')');
       }
 
       await this.prisma.cartItem.update({
@@ -131,6 +146,7 @@ export class CartService {
         data: {
           cartId: cart.id,
           productId: dto.productId,
+          productVariantId: dto.productVariantId || null,
           quantity: dto.quantity,
         },
       });
@@ -139,7 +155,7 @@ export class CartService {
     return this.getOrCreateCart(userId);
   }
 
-  async updateCartItem(userId: number, itemId: number, dto: UpdateCartItemDto) {
+  async updateCartItem(userId: number, productId: number, dto: UpdateCartItemDto) {
     const cart = await this.prisma.cart.findUnique({
       where: { userId },
     });
@@ -148,26 +164,33 @@ export class CartService {
       throw new NotFoundException('Khong tim thay gio hang cua nguoi dung');
     }
 
-    const item = await this.prisma.cartItem.findUnique({
-      where: { id: itemId },
-      include: { product: true },
+    const item = await this.prisma.cartItem.findFirst({
+      where: {
+        cartId: cart.id,
+        productId: productId,
+        productVariantId: dto.productVariantId || null,
+      },
+      include: { product: true, productVariant: true },
     });
 
-    if (!item || item.cartId !== cart.id) {
+    if (!item) {
       throw new NotFoundException('Khong tim thay san pham trong gio hang cua ban');
     }
 
     if (dto.quantity === 0) {
       await this.prisma.cartItem.delete({
-        where: { id: itemId },
+        where: { id: item.id },
       });
     } else {
-      if (item.product.stock < dto.quantity) {
-        throw new BadRequestException('So luong cap nhat (' + dto.quantity + ') vuot qua ton kho (' + item.product.stock + ')');
+      let stockToCheck = item.product.stock;
+      if (item.productVariant) stockToCheck = item.productVariant.stock;
+
+      if (stockToCheck < dto.quantity) {
+        throw new BadRequestException('So luong cap nhat (' + dto.quantity + ') vuot qua ton kho (' + stockToCheck + ')');
       }
 
       await this.prisma.cartItem.update({
-        where: { id: itemId },
+        where: { id: item.id },
         data: { quantity: dto.quantity },
       });
     }
@@ -175,7 +198,7 @@ export class CartService {
     return this.getOrCreateCart(userId);
   }
 
-  async removeCartItem(userId: number, itemId: number) {
+  async removeCartItem(userId: number, productId: number, variantId?: number) {
     const cart = await this.prisma.cart.findUnique({
       where: { userId },
     });
@@ -184,16 +207,20 @@ export class CartService {
       throw new NotFoundException('Khong tim thay gio hang cua nguoi dung');
     }
 
-    const item = await this.prisma.cartItem.findUnique({
-      where: { id: itemId },
+    const item = await this.prisma.cartItem.findFirst({
+      where: {
+        cartId: cart.id,
+        productId: productId,
+        productVariantId: variantId || null,
+      },
     });
 
-    if (!item || item.cartId !== cart.id) {
+    if (!item) {
       throw new NotFoundException('Khong tim thay san pham nay trong gio hang');
     }
 
     await this.prisma.cartItem.delete({
-      where: { id: itemId },
+      where: { id: item.id },
     });
 
     return this.getOrCreateCart(userId);

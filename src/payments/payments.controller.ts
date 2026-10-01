@@ -1,4 +1,5 @@
-﻿import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards, Req } from '@nestjs/common';
+import { Request } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
@@ -28,6 +29,12 @@ export class PaymentsController {
   @ApiResponse({ status: 200, description: 'Xử lý webhook thành công (hoặc trả kết quả idempotent nếu gọi trùng lặp)' })
   async handleWebhook(@Body() dto: PaymentWebhookDto) {
     return this.paymentsService.handleWebhook(dto);
+  }
+
+  @Get('vnpay-return')
+  @ApiOperation({ summary: 'Xử lý Return URL từ VNPAY redirect về' })
+  async vnpayReturn(@Req() req: any) {
+    return this.paymentsService.verifyReturnUrl(req.query);
   }
 
   @Get('my-transactions')

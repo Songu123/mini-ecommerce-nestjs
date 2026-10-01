@@ -8,7 +8,10 @@ import {
   IsPositive,
   IsString,
   ValidateNested,
+  Matches,
+  IsEnum,
 } from 'class-validator';
+import { PaymentMethod } from '@prisma/client';
 
 export class OrderItemDto {
   @ApiProperty({ example: 1, description: 'ID của sản phẩm cần đặt mua' })
@@ -22,6 +25,12 @@ export class OrderItemDto {
   @IsInt({ message: 'Số lượng phải là số nguyên' })
   @IsPositive({ message: 'Số lượng mua phải lớn hơn 0' })
   quantity: number;
+
+  @ApiPropertyOptional({ example: 3, description: 'ID phân loại sản phẩm (nếu có)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  productVariantId?: number;
 }
 
 export class CreateOrderDto {
@@ -39,4 +48,25 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   couponCode?: string;
+
+  @ApiPropertyOptional({ example: '123 Đường Nguyễn Huệ, Quận 1', description: 'Địa chỉ nhận hàng' })
+  @IsOptional()
+  @IsString()
+  shippingAddress?: string;
+
+  @ApiPropertyOptional({ example: 'COD', description: 'Phương thức thanh toán' })
+  @IsOptional()
+  @IsEnum(PaymentMethod, { message: 'Phương thức thanh toán không hợp lệ' })
+  paymentMethod?: PaymentMethod;
+
+  @ApiPropertyOptional({ example: '0901234567', description: 'Số điện thoại liên hệ' })
+  @IsOptional()
+  @IsString()
+  @Matches(/(84|0[3|5|7|8|9])+([0-9]{8})\b/, { message: 'Số điện thoại không hợp lệ' })
+  phone?: string;
+
+  @ApiPropertyOptional({ example: 'Giao giờ hành chính', description: 'Ghi chú đơn hàng' })
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

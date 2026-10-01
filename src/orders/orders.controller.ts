@@ -1,7 +1,8 @@
-﻿import {
+import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Patch,
   Param,
@@ -61,16 +62,27 @@ export class OrdersController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Xem chi tiết đơn hàng theo ID' })
-  @ApiResponse({ status: 200, description: 'Chi tiết đơn hàng' })
-  @ApiResponse({ status: 403, description: 'Không có quyền truy cập đơn hàng này' })
+  @ApiOperation({ summary: 'Lấy chi tiết một đơn hàng' })
+  @ApiResponse({ status: 200, description: 'Lấy chi tiết thành công' })
+  @ApiResponse({ status: 403, description: 'Không có quyền truy cập' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy đơn hàng' })
-  findOne(
-    @Param('id', ParseIntPipe) id: number,
-    @CurrentUser() user: any,
-  ) {
+  findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: any) {
     return this.ordersService.findOne(id, user);
   }
+
+  @Patch(':id/cancel')
+  @ApiOperation({ summary: 'Hủy đơn hàng (người dùng) và ghi chú lý do' })
+  @ApiResponse({ status: 200, description: 'Hủy thành công' })
+  @ApiResponse({ status: 403, description: 'Không có quyền hủy' })
+  @ApiResponse({ status: 400, description: 'Không thể hủy trong trạng thái hiện tại' })
+  async cancel(
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body('reason') reason?: string,
+  ) {
+    return this.ordersService.cancelOrder(user.id, id, reason);
+  }
+
 
   @Patch(':id/status')
   @Roles(Role.ADMIN)
