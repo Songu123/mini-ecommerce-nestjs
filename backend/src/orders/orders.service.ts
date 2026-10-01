@@ -3,6 +3,7 @@ import { OrderStatus, Role, DiscountType, PaymentMethod } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OrdersGateway } from '../notifications/orders.gateway.js';
 import { RedisService } from '../redis/redis.service.js';
+import { MailService } from '../mail/mail.service.js';
 import { CreateOrderDto } from './dto/create-order.dto.js';
 import { QueryOrderDto, UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
 
@@ -12,6 +13,7 @@ export class OrdersService {
     private prisma: PrismaService,
     private ordersGateway: OrdersGateway,
     private redis: RedisService,
+    private mailService: MailService,
   ) {}
 
   async create(userId: number, dto: CreateOrderDto) {
@@ -151,7 +153,6 @@ export class OrdersService {
           items: {
             include: {
               product: { select: { id: true, name: true, images: { select: { url: true, isPrimary: true } } } },
-              productVariant: { select: { id: true, name: true } },
             },
           },
         },
@@ -167,6 +168,15 @@ export class OrdersService {
     ]);
 
     this.ordersGateway.notifyOrderCreated(createdOrder);
+
+    // Send order confirmation email asynchronously
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (user?.email) {
+      this.mailService.sendOrderConfirmation(user.email, createdOrder.id, createdOrder.totalAmount.toNumber()).catch(e => {
+        console.error('Lỗi khi gửi email chạy ngầm:', e);
+      });
+    }
+
     return createdOrder;
   }
 

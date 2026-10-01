@@ -31,7 +31,7 @@ export default function CheckoutPage() {
   const [phone, setPhone] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [note, setNote] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'CARD'>('COD');
+  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'ONLINE'>('COD');
   const [submitting, setSubmitting] = useState(false);
   const [orderSuccessId, setOrderSuccessId] = useState<number | null>(null);
 
@@ -173,9 +173,11 @@ export default function CheckoutPage() {
 
       if (res.ok) {
         success('Đơn hàng đã được tạo thành công!');
-        if (paymentMethod === 'CARD') {
+        if (paymentMethod === 'ONLINE') {
           setIsRedirecting(true);
           clearSelectedItems();
+          // We will fetch payment URL from API or redirect directly to our payment intent endpoint
+          // Wait, the backend doesn't automatically create intent. We need to redirect to a page that creates it.
           router.push(`/payment/${data.id}`);
         } else {
           setOrderSuccessId(data.id);
@@ -350,24 +352,27 @@ export default function CheckoutPage() {
               </label>
 
               <label 
-                className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'CARD' ? 'border-indigo-600 bg-indigo-50/50' : 'border-slate-200 hover:border-slate-300'}`}
+                className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'ONLINE' ? 'border-indigo-600 bg-indigo-50/50' : 'border-slate-200 hover:border-slate-300'}`}
               >
                 <div className="flex h-5 items-center">
                   <input 
                     type="radio" 
                     name="payment_method" 
-                    value="CARD" 
-                    checked={paymentMethod === 'CARD'}
-                    onChange={() => setPaymentMethod('CARD')}
+                    value="ONLINE" 
+                    checked={paymentMethod === 'ONLINE'}
+                    onChange={() => setPaymentMethod('ONLINE')}
                     className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-600" 
                   />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <div className="font-semibold text-slate-900 text-sm">Thanh toán qua VNPAY / Thẻ</div>
+                    <div className="font-semibold text-slate-900 text-sm flex items-center gap-2">
+                      Thanh toán qua VNPAY
+                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700">Khuyên dùng</span>
+                    </div>
                     <CreditCard className="w-5 h-5 text-slate-400" />
                   </div>
-                  <div className="text-sm text-slate-500 mt-1">Hệ thống sẽ chuyển hướng bạn đến cổng thanh toán VNPAY (Phiên bản Sandbox).</div>
+                  <div className="text-sm text-slate-500 mt-1">Hệ thống sẽ chuyển hướng bạn đến cổng thanh toán VNPAY (Thẻ ATM nội địa, QR Pay, Thẻ quốc tế).</div>
                 </div>
               </label>
             </div>

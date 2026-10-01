@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth-store';
 import { useSocket } from '@/components/providers/SocketProvider';
-import { formatVND, getFullImageUrl } from '@/lib/utils';
+import { formatVND, getFullImageUrl, formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { ArrowLeft, Clock, Package, Truck, CheckCircle2, XCircle, MapPin, CreditCard, Receipt } from 'lucide-react';
