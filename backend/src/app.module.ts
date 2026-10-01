@@ -22,6 +22,7 @@ import { PaymentsModule } from './payments/payments.module.js';
 import { ReviewsModule } from './reviews/reviews.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { AuditModule } from './audit/audit.module.js';
+import { MailModule } from './mail/mail.module.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -50,6 +51,7 @@ import { AuditModule } from './audit/audit.module.js';
     ReviewsModule,
     AdminModule,
     AuditModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [
