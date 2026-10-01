@@ -7,6 +7,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { Role } from '@prisma/client';
 import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 
@@ -232,6 +233,36 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async googleLogin(reqUser: any) {
+    if (!reqUser) {
+      throw new UnauthorizedException('Không có thông tin từ Google');
+    }
+
+    let user = await this.prisma.user.findUnique({
+      where: { email: reqUser.email },
+    });
+
+    if (!user) {
+      // Create new user if not exists
+      user = await this.prisma.user.create({
+        data: {
+          email: reqUser.email,
+          name: reqUser.name,
+          password: await bcrypt.hash(reqUser.email + Math.random(), 10), // Random password
+          role: Role.CUSTOMER,
+        },
+      });
+      // Optionally send a welcome email here
+    }
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    return {
+      message: 'Đăng nhập Google thành công',
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+    };
   }
 }
 

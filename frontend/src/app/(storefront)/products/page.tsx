@@ -16,68 +16,87 @@ function ProductsCatalogContent() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCat, setSelectedCat] = useState<string | number>(initialCategory);
+  const [minPrice, setMinPrice] = useState<string>('');
+  const [maxPrice, setMaxPrice] = useState<string>('');
   const [sortBy, setSortBy] = useState<string>('newest');
   const [searchQuery, setSearchQuery] = useState<string>(initialSearch);
 
-  // Đồng bộ URL search query vào local state nếu URL thay đổi
+  // Sync URL query params with state
   useEffect(() => {
-    const urlSearch = searchParams.get('search') || '';
-    if (urlSearch !== searchQuery) {
-      setSearchQuery(urlSearch);
-    }
+    setSearchQuery(searchParams.get('search') || '');
+    setSelectedCat(searchParams.get('categoryId') || 'all');
+    
+    // Convert url sortBy back to local state
+    const urlSortBy = searchParams.get('sortBy');
+    const urlSortOrder = searchParams.get('sortOrder');
+    if (urlSortBy === 'price' && urlSortOrder === 'asc') setSortBy('price-asc');
+    else if (urlSortBy === 'price' && urlSortOrder === 'desc') setSortBy('price-desc');
+    else setSortBy('newest');
+
+    setMinPrice(searchParams.get('minPrice') || '');
+    setMaxPrice(searchParams.get('maxPrice') || '');
   }, [searchParams]);
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!router) return;
-    
+  // Push new state to URL
+  const updateUrl = (updates: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (searchQuery.trim()) {
-      params.set('search', searchQuery.trim());
-    } else {
-      params.delete('search');
-    }
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    });
     router.push(`/products?${params.toString()}`);
   };
 
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateUrl({ search: searchQuery });
+  };
+
+  const handleApplyPriceFilter = () => {
+    updateUrl({ minPrice, maxPrice });
+  };
+
+  // Fetch products when searchParams change
   useEffect(() => {
-    async function loadInitial() {
+    async function fetchFiltered() {
+      setLoading(true);
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-        const [prodRes, catRes] = await Promise.all([
-          fetch(`${apiUrl}/products?limit=50`, { cache: 'no-store' }).then((res) => res.json()),
-          fetch(`${apiUrl}/categories`, { cache: 'no-store' }).then((res) => res.json()),
-        ]);
+        
+        // 1. Fetch categories (only needed once, but fine here)
+        if (categories.length === 0) {
+          const catRes = await fetch(`${apiUrl}/categories`).then(r => r.json());
+          setCategories(Array.isArray(catRes) ? catRes : (catRes.data || []));
+        }
 
-        const prodList = Array.isArray(prodRes) ? prodRes : (prodRes.data || []);
-        const catList = Array.isArray(catRes) ? catRes : (catRes.data || []);
+        // 2. Build backend query
+        let query = `${apiUrl}/products?limit=50`;
+        const search = searchParams.get('search');
+        const catId = searchParams.get('categoryId');
+        const minP = searchParams.get('minPrice');
+        const maxP = searchParams.get('maxPrice');
+        const sBy = searchParams.get('sortBy');
+        const sOrder = searchParams.get('sortOrder');
 
-        setProducts(prodList);
-        setCategories(catList);
+        if (search) query += `&search=${encodeURIComponent(search)}`;
+        if (catId && catId !== 'all') query += `&categoryId=${catId}`;
+        if (minP) query += `&minPrice=${minP}`;
+        if (maxP) query += `&maxPrice=${maxP}`;
+        if (sBy) query += `&sortBy=${sBy}&sortOrder=${sOrder || 'desc'}`;
+        else query += `&sortBy=createdAt&sortOrder=desc`;
+
+        const prodRes = await fetch(query).then(r => r.json());
+        setProducts(Array.isArray(prodRes) ? prodRes : (prodRes.data || []));
       } catch (err) {
         console.error('Lỗi tải sản phẩm:', err);
       } finally {
         setLoading(false);
       }
     }
-    loadInitial();
-  }, []);
+    fetchFiltered();
+  }, [searchParams]);
 
-  const filteredProducts = products
-    .filter((p) => {
-      const matchCat =
-        selectedCat === 'all' ||
-        String(p.categoryId) === String(selectedCat);
-      const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchCat && matchSearch;
-    })
-    .sort((a, b) => {
-      const priceA = Number(a.price) || 0;
-      const priceB = Number(b.price) || 0;
-      if (sortBy === 'price-asc') return priceA - priceB;
-      if (sortBy === 'price-desc') return priceB - priceA;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
+  const filteredProducts = products;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -107,7 +126,12 @@ function ProductsCatalogContent() {
 
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === 'price-asc') updateUrl({ sortBy: 'price', sortOrder: 'asc' });
+              else if (val === 'price-desc') updateUrl({ sortBy: 'price', sortOrder: 'desc' });
+              else updateUrl({ sortBy: 'createdAt', sortOrder: 'desc' });
+            }}
             className="h-10 w-full sm:w-auto rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
             aria-label="Sắp xếp sản phẩm"
           >
@@ -129,7 +153,7 @@ function ProductsCatalogContent() {
             <nav className="space-y-1" aria-label="Danh mục">
               <button
                 type="button"
-                onClick={() => setSelectedCat('all')}
+                onClick={() => updateUrl({ categoryId: null })}
                 className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${selectedCat === 'all'
                   ? 'bg-indigo-50 text-indigo-700'
                   : 'text-slate-600 hover:bg-slate-50'
@@ -146,7 +170,7 @@ function ProductsCatalogContent() {
                   <button
                     key={c.id}
                     type="button"
-                    onClick={() => setSelectedCat(c.id)}
+                    onClick={() => updateUrl({ categoryId: String(c.id) })}
                     className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium flex items-center justify-between transition-colors ${isSelected
                       ? 'bg-indigo-50 text-indigo-700'
                       : 'text-slate-600 hover:bg-slate-50'
@@ -160,6 +184,42 @@ function ProductsCatalogContent() {
                 );
               })}
             </nav>
+          </div>
+
+          {/* Price Range Filter */}
+          <div className="p-4 mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center gap-2 font-semibold mb-4 text-sm text-slate-900">
+              <SlidersHorizontal className="w-4 h-4 text-indigo-600" />
+              <span>Khoảng giá (VNĐ)</span>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Từ</label>
+                <input 
+                  type="number" 
+                  value={minPrice} 
+                  onChange={(e) => setMinPrice(e.target.value)}
+                  placeholder="0" 
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Đến</label>
+                <input 
+                  type="number" 
+                  value={maxPrice} 
+                  onChange={(e) => setMaxPrice(e.target.value)}
+                  placeholder="100000000" 
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <button 
+                onClick={handleApplyPriceFilter}
+                className="w-full bg-indigo-600 text-white font-medium text-sm py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                Áp dụng
+              </button>
+            </div>
           </div>
         </aside>
 
@@ -180,7 +240,9 @@ function ProductsCatalogContent() {
               <button
                 onClick={() => {
                   setSearchQuery('');
-                  setSelectedCat('all');
+                  setMinPrice('');
+                  setMaxPrice('');
+                  router.push('/products');
                 }}
                 className="mt-4 px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
               >

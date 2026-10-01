@@ -1,4 +1,4 @@
-﻿import {
+import {
   Controller,
   Post,
   Body,
@@ -6,6 +6,8 @@
   UseGuards,
   HttpCode,
   HttpStatus,
+  Req,
+  Res,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -19,6 +21,7 @@ import { RegisterDto } from './dto/register.dto.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
+import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
 @ApiTags('Auth')
@@ -81,5 +84,22 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Chưa xác thực hoặc Token hết hạn' })
   getProfile(@CurrentUser() user: any) {
     return this.authService.getProfile(user.id);
+  }
+
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Chuyển hướng đến màn hình đăng nhập Google' })
+  async googleAuth(@Req() req: any) {
+    // AuthGuard sẽ tự động chuyển hướng
+  }
+
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Xử lý callback từ Google trả về' })
+  async googleAuthRedirect(@Req() req: any, @Res() res: any) {
+    const tokens = await this.authService.googleLogin(req.user);
+    // Redirect to frontend with token
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+    res.redirect(`${frontendUrl}/login?token=${tokens.accessToken}`);
   }
 }
