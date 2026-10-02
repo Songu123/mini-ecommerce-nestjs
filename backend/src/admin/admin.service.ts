@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { OrderStatus } from '@prisma/client';
+import ExcelJS from 'exceljs';
 
 @Injectable()
 export class AdminService {
@@ -125,5 +126,52 @@ export class AdminService {
     );
 
     return { success: true, isActive: updatedUser.isActive };
+  }
+
+  async exportOrdersToExcel(): Promise<Buffer> {
+    const orders = await this.prisma.order.findMany({
+      include: {
+        user: { select: { name: true, email: true } },
+        items: { select: { product: { select: { name: true } }, quantity: true, price: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Danh Sách Đơn Hàng');
+
+    worksheet.columns = [
+      { header: 'Mã ĐH', key: 'id', width: 10 },
+      { header: 'Ngày Tạo', key: 'createdAt', width: 20 },
+      { header: 'Khách Hàng', key: 'customer', width: 25 },
+      { header: 'Số Điện Thoại', key: 'phone', width: 15 },
+      { header: 'Địa Chỉ', key: 'address', width: 40 },
+      { header: 'Trạng Thái', key: 'status', width: 15 },
+      { header: 'Tổng Tiền', key: 'totalAmount', width: 15 },
+      { header: 'Phí Ship', key: 'shippingFee', width: 15 },
+      { header: 'Chi Tiết SP', key: 'items', width: 50 },
+    ];
+
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).alignment = { horizontal: 'center' };
+
+    orders.forEach(order => {
+      const itemsStr = order.items.map(i => `${i.product.name} (SL: ${i.quantity})`).join(', ');
+      
+      worksheet.addRow({
+        id: order.id,
+        createdAt: order.createdAt.toLocaleString('vi-VN'),
+        customer: order.user.name || order.user.email,
+        phone: order.phone || '',
+        address: order.shippingAddress || '',
+        status: order.status,
+        totalAmount: Number(order.totalAmount),
+        shippingFee: Number(order.shippingFee),
+        items: itemsStr,
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return buffer as unknown as Buffer;
   }
 }
