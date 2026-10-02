@@ -59,6 +59,11 @@ export class CreateOrderDto {
   @IsEnum(PaymentMethod, { message: 'Phương thức thanh toán không hợp lệ' })
   paymentMethod?: PaymentMethod;
 
+  @ApiPropertyOptional({ example: 30000, description: 'Phí giao hàng (GHN)' })
+  @IsOptional()
+  @IsInt()
+  shippingFee?: number;
+
   @ApiPropertyOptional({ example: '0901234567', description: 'Số điện thoại liên hệ' })
   @IsOptional()
   @IsString()

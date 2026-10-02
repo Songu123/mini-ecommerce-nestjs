@@ -1,4 +1,5 @@
-import { Controller, Get, Patch, Param, ParseIntPipe, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Patch, Param, ParseIntPipe, UseGuards, Req, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { AdminService } from './admin.service.js';
@@ -30,5 +31,16 @@ export class AdminController {
   @ApiOperation({ summary: 'Khóa / Mở khóa tài khoản khách hàng' })
   toggleBanUser(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
     return this.adminService.toggleBanUser(id, req.user.id);
+  }
+
+  @Get('export/orders')
+  @ApiOperation({ summary: 'Xuất danh sách đơn hàng ra file Excel' })
+  async exportOrders(@Res() res: Response) {
+    const buffer = await this.adminService.exportOrdersToExcel();
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=' + 'orders-report.xlsx');
+    
+    return res.send(buffer);
   }
 }

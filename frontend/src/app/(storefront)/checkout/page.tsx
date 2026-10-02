@@ -64,33 +64,74 @@ export default function CheckoutPage() {
     }
   }, [items.length, orderSuccessId, router, isRedirecting]);
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+  const [shippingFee, setShippingFee] = useState<number>(30000);
+
   // Fetch provinces on mount
   useEffect(() => {
-    fetch('https://provinces.open-api.vn/api/?depth=3')
+    fetch(`${apiUrl}/shipping/provinces`)
       .then((res) => res.json())
-      .then((data) => setProvinces(data))
+      .then((data) => setProvinces(data || []))
       .catch((err) => console.error('Failed to fetch provinces', err));
-  }, []);
+  }, [apiUrl]);
 
   const handleProvinceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const code = e.target.value;
-    setSelectedProvince(code);
+    const id = e.target.value;
+    setSelectedProvince(id);
     setSelectedDistrict('');
     setSelectedWard('');
-    
-    const province = provinces.find((p) => p.code == code);
-    setDistricts(province?.districts || []);
     setWards([]);
+    
+    if (id) {
+      fetch(`${apiUrl}/shipping/districts?province_id=${id}`)
+        .then((res) => res.json())
+        .then((data) => setDistricts(data || []))
+        .catch((err) => console.error('Failed to fetch districts', err));
+    } else {
+      setDistricts([]);
+    }
   };
 
   const handleDistrictChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const code = e.target.value;
-    setSelectedDistrict(code);
+    const id = e.target.value;
+    setSelectedDistrict(id);
     setSelectedWard('');
     
-    const district = districts.find((d) => d.code == code);
-    setWards(district?.wards || []);
+    if (id) {
+      fetch(`${apiUrl}/shipping/wards?district_id=${id}`)
+        .then((res) => res.json())
+        .then((data) => setWards(data || []))
+        .catch((err) => console.error('Failed to fetch wards', err));
+    } else {
+      setWards([]);
+    }
   };
+
+  // Tính phí ship khi chọn phường/xã
+  useEffect(() => {
+    if (selectedDistrict && selectedWard) {
+      const weight = items.length * 500; // Giả định mỗi món 500g
+      const insurance_value = getTotalPrice();
+
+      fetch(`${apiUrl}/shipping/fee`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to_district_id: parseInt(selectedDistrict),
+          to_ward_code: selectedWard,
+          weight,
+          insurance_value: insurance_value > 5000000 ? 5000000 : insurance_value // GHN max insurance is 5M
+        })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.total) {
+            setShippingFee(data.total);
+          }
+        })
+        .catch(err => console.error('Failed to calc fee', err));
+    }
+  }, [selectedDistrict, selectedWard, items.length, getTotalPrice, apiUrl]);
 
   if (isLoading || !isAuthenticated) {
     return <div className="py-24 text-center">Đang kiểm tra thông tin...</div>;
@@ -125,9 +166,9 @@ export default function CheckoutPage() {
 
     setSubmitting(true);
     try {
-      const pName = provinces.find(x => x.code == selectedProvince)?.name || '';
-      const dName = districts.find(x => x.code == selectedDistrict)?.name || '';
-      const wName = wards.find(x => x.code == selectedWard)?.name || '';
+      const pName = provinces.find(x => String(x.ProvinceID) === selectedProvince)?.ProvinceName || '';
+      const dName = districts.find(x => String(x.DistrictID) === selectedDistrict)?.DistrictName || '';
+      const wName = wards.find(x => String(x.WardCode) === selectedWard)?.WardName || '';
       const fullAddress = [streetAddress, wName, dName, pName].filter(Boolean).join(', ');
 
       if (!phone || !fullAddress || !streetAddress || !selectedProvince || !selectedDistrict || !selectedWard) {
@@ -144,7 +185,6 @@ export default function CheckoutPage() {
         return;
       }
       setPhoneError('');
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
       const orderItems = items.map(item => ({
         productId: item.product.id,
         productVariantId: item.variant?.id,
@@ -157,6 +197,7 @@ export default function CheckoutPage() {
         phone: phone,
         note: note,
         paymentMethod: paymentMethod,
+        shippingFee: shippingFee,
         ...(appliedCoupon ? { couponCode: appliedCoupon.code } : {})
       };
 
@@ -196,6 +237,7 @@ export default function CheckoutPage() {
 
   const subtotal = getSubtotal();
   const total = getTotalPrice();
+  const finalTotal = total + shippingFee;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
@@ -261,7 +303,7 @@ export default function CheckoutPage() {
                   >
                     <option value="">-- Chọn Tỉnh/Thành phố --</option>
                     {provinces.map(p => (
-                      <option key={p.code} value={p.code}>{p.name}</option>
+                      <option key={p.ProvinceID} value={p.ProvinceID}>{p.ProvinceName}</option>
                     ))}
                   </select>
                 </div>
@@ -276,7 +318,7 @@ export default function CheckoutPage() {
                   >
                     <option value="">-- Chọn Quận/Huyện --</option>
                     {districts.map(d => (
-                      <option key={d.code} value={d.code}>{d.name}</option>
+                      <option key={d.DistrictID} value={d.DistrictID}>{d.DistrictName}</option>
                     ))}
                   </select>
                 </div>
@@ -291,7 +333,7 @@ export default function CheckoutPage() {
                   >
                     <option value="">-- Chọn Phường/Xã --</option>
                     {wards.map(w => (
-                      <option key={w.code} value={w.code}>{w.name}</option>
+                      <option key={w.WardCode} value={w.WardCode}>{w.WardName}</option>
                     ))}
                   </select>
                 </div>
@@ -423,7 +465,7 @@ export default function CheckoutPage() {
               </div>
               <div className="flex justify-between items-center text-sm text-slate-600">
                 <span>Phí giao hàng</span>
-                <span className="font-medium text-slate-900">Miễn phí</span>
+                <span className="font-medium text-slate-900">{formatVND(shippingFee)}</span>
               </div>
               
               {appliedCoupon && (
@@ -439,7 +481,7 @@ export default function CheckoutPage() {
             <div className="flex justify-between items-end mb-8">
               <span className="text-base font-semibold text-slate-900">Tổng thanh toán</span>
               <span className="text-2xl font-extrabold text-indigo-600 block leading-none">
-                {formatVND(total)}
+                {formatVND(finalTotal)}
               </span>
             </div>
 

@@ -120,7 +120,8 @@ export class OrdersService {
         }
       }
 
-      const finalAmount = Math.max(0, totalAmount - discountAmount);
+      const shippingFee = dto.shippingFee || 0;
+      const finalAmount = Math.max(0, totalAmount - discountAmount) + shippingFee;
 
       const orderStatus = dto.paymentMethod === PaymentMethod.COD ? OrderStatus.PENDING : OrderStatus.AWAITING_PAYMENT;
 
@@ -128,6 +129,7 @@ export class OrdersService {
         data: {
           userId,
           totalAmount: finalAmount,
+          shippingFee,
           discountAmount,
           couponId,
           status: orderStatus,
